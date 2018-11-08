@@ -7,6 +7,7 @@ import json
 
 
 BRANCH = os.environ['TRAVIS_BRANCH']
+COMMIT = os.environ['TRAVIS_COMMIT']
 
 
 def create_buckets():
@@ -63,8 +64,13 @@ s3 = boto3.client('s3')
 with open('src/lambda.zip', 'rb') as file:
     data = file.read()
     for bucket in buckets:
-        print(s3.put_object(
+        s3.put_object(
             Bucket=bucket,
             Key=f'{BRANCH}/lambda.zip',
             Body=data,
-        ))
+        )
+        s3.put_object(
+            Bucket=bucket,
+            Key=f'commits/{COMMIT}.zip',
+            Body=data,
+        )
