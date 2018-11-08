@@ -1,0 +1,7 @@
+language: python
+node_js:
+  - 3.6
+
+install: pip install -r requirements.txt -t src/
+
+script: python deploy.py
