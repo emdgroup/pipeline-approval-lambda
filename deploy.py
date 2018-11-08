@@ -6,7 +6,7 @@ import os
 
 s3 = boto3.client('s3')
 
-BRANCH = os.environ('TRAVIS_BRANCH')
+BRANCH = os.environ['TRAVIS_BRANCH']
 
 
 def create_buckets():
