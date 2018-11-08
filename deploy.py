@@ -3,6 +3,7 @@
 import boto3
 import subprocess
 import os
+import json
 
 
 BRANCH = os.environ['TRAVIS_BRANCH']
@@ -24,10 +25,7 @@ def create_buckets():
         except Exception as ex:
             print(f'bucket in region {region} does not exist, creating one...')
             if(bucket_location == None):
-                regional_s3.create_bucket(
-                    Bucket=bucket_name,
-                    ACL='public-read',
-                )
+                regional_s3.create_bucket(Bucket=bucket_name)
             else:
               regional_s3.create_bucket(
                   Bucket=bucket_name,
@@ -36,6 +34,20 @@ def create_buckets():
                       'LocationConstraint': bucket_location,
                   }
               )
+
+            regional_s3.put_bucket_policy(
+              Bucket=bucket_name,
+              ConfirmRemoveSelfBucketAccess=True,
+              Policy=json.dumps({
+                'Version': '2012-10-17',
+                'Statement': [{
+                  'Effect': 'Allow',
+                  'Action': 's3:GetObject',
+                  'Resource': f'arn:aws:s3:::{bucket_name}/*',
+                  'Principal': '*',
+                }]
+              })
+            )
 
     return buckets
 
