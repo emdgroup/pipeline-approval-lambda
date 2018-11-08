@@ -3,6 +3,7 @@ import os
 import json
 import yaml
 import difflib
+import json
 from botocore.client import Config
 
 cfn = boto3.client('cloudformation')
@@ -88,12 +89,12 @@ def lambda_handler(event, context):
 def aws_session(job_id):
     client = boto3.client('sts')
     response = client.assume_role(
-        RoleArn=ROLE_ARN, RoleSessionName=f'pipeline-changes-{job_id}', Policy={
+        RoleArn=ROLE_ARN, RoleSessionName=f'pipeline-changes-{job_id}', Policy=json.dumps({
             'Statement': [{
                 'Effect': 'Allow',
                 'Resource': '*',
                 'Action': ['codepipeline:PutJobFailureResult', 'codepipeline:PutJobSuccessResult'],
-            }]})
+            }]}))
     return response['Credentials']
 
 
