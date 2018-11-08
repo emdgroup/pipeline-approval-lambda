@@ -10,10 +10,10 @@ s3client = boto3.client('s3')
 pipeline = boto3.client('codepipeline')
 sns = boto3.client('sns')
 
-dictionary = {}
 TOPIC = os.getenv('TOPIC')
 ROLE_ARN = os.environ['ROLE_ARN']
 AWS_REGION = os.environ['AWS_DEFAULT_REGION']
+WEB_URL = os.environ['WEB_URL']
 
 
 class Parameters:
@@ -65,7 +65,7 @@ class Parameters:
 
 def lambda_handler(event, context):
     print(event)
-    CodePipeline = event['CodePipeline.job']
+    job = event['CodePipeline.job']
     JobId = event['CodePipeline.job']['id']
     UserParameters = event['CodePipeline.job']['data']['actionConfiguration']['configuration']['UserParameters']
     change_sets = get_ChangeSetId(UserParameters)
@@ -73,7 +73,7 @@ def lambda_handler(event, context):
         pipeline.put_job_success_result(jobId=JobId)
     else:
         try:
-            describe_ChangeSet(change_sets, CodePipeline, JobId)
+            describe_change_set(change_sets, job)
         except Exception as e:
             print(e)
             pipeline.put_job_failure_result(
@@ -85,10 +85,15 @@ def lambda_handler(event, context):
             )
 
 
-def aws_session():
+def aws_session(job_id):
     client = boto3.client('sts')
     response = client.assume_role(
-        RoleArn=ROLE_ARN, RoleSessionName='pipeline-changes')
+        RoleArn=ROLE_ARN, RoleSessionName=f'pipeline-changes-{job_id}', Policy={
+            'Statement': [{
+                'Effect': 'Allow',
+                'Resource': '*',
+                'Action': ['codepipeline:PutJobFailureResult', 'codepipeline:PutJobSuccessResult'],
+            }]})
     return response['Credentials']
 
 
@@ -103,30 +108,28 @@ def get_ChangeSetId(UserParameters):
     return ChangeSetIds
 
 
-def describe_ChangeSet(change_sets, CodePipeline, JobId):
-    account_id = CodePipeline['accountId']
-    AllChanges = calculate_diff(change_sets, JobId, account_id)
-    # print(json.dumps(AllChanges))
-    bucket = CodePipeline['data']['inputArtifacts'][0]['location']['s3Location']['bucketName']
-    # bucket='app-pipeline-test-artifacts-xgyu8fbefksy'
-    s3client.put_object(Body=json.dumps(AllChanges), Bucket=bucket,
-                        Key=f'Gateway/{JobId}.json', ContentType='application/json')
+def describe_change_set(change_sets, job):
+    account_id = job['accountId']
+    job_id = job['id']
+    all_changes = calculate_diff(change_sets, job_id, account_id)
+    bucket = job['data']['inputArtifacts'][0]['location']['s3Location']['bucketName']
+    s3client.put_object(Body=json.dumps(all_changes), Bucket=bucket,
+                        Key=f'approvals/{job_id}.json', ContentType='application/json')
     url = s3client.generate_presigned_url(
         ClientMethod='get_object',
         Params={
             'Bucket': bucket,
-            'Key': f'Gateway/{JobId}.json'
+            'Key': f'approvals/{job_id}.json'
         },
         ExpiresIn=1800)
-    hostname = 'https://pipeline-changesets.hcie.io'
     signature = url.split('?')[-1]
-    signed_url = f'{hostname}/{bucket}/Gateway/{JobId}.json?{signature}'
+    signed_url = f'{WEB_URL}/#/{bucket}/approvals/{job_id}.json?{signature}'
     send_notification(f'Review the ChangeSets at: {signed_url}')
 
 
 def send_notification(message):
     sns.publish(TopicArn=TOPIC, Message=message,
-                           Subject='ChangeSets for the CloudFormation Stacks')
+                Subject='ChangeSets for the CloudFormation Stacks')
     print("notification send to the email")
 
 
@@ -151,19 +154,22 @@ def calculate_parameter_diff(stack_name, describe_change_set, describe_stack):
     return all_parameters
 
 
-def calculate_diff(stackchanges, JobId, account_id):
+def calculate_diff(stackchanges, job_id, account_id):
     print("calculating diff")
     name = pipeline.get_job_details(
-        jobId=JobId)['jobDetails']['data']['pipelineContext']['pipelineName']
+        jobId=job_id)['jobDetails']['data']['pipelineContext']['pipelineName']
     print(name)
-    credentials = aws_session()
-    dictionary['Pipeline'] = {
-        'Region': AWS_REGION, 'JobId': JobId, 'PipelineName': name, 'AccountId': account_id}
-    dictionary['Credentials'] = {'AccessKeyId': credentials['AccessKeyId'],
-                                 'SecretAccessKey': credentials['SecretAccessKey'],
-                                 'SessionToken': credentials['SessionToken']}
-    dictionary['Changes'] = []
-    print(dictionary)
+    credentials = aws_session(job_id)
+
+    response = {
+        'Pipeline': {
+            'Region': AWS_REGION, 'JobId': job_id, 'PipelineName': name, 'AccountId': account_id},
+        'Credentials': {'AccessKeyId': credentials['AccessKeyId'],
+                        'SecretAccessKey': credentials['SecretAccessKey'],
+                        'SessionToken': credentials['SessionToken']},
+        'Changes': []
+    }
+    print(response)
     for ChangeSetId in stackchanges:
         describe_change_set = cfn.describe_change_set(
             ChangeSetName=ChangeSetId)
@@ -190,11 +196,10 @@ def calculate_diff(stackchanges, JobId, account_id):
             tem_diff = calculate_template_diff(cur_template, new_template)
 
         if len(describe_change_set['Changes']) == 0:
-            print("setting changes to none")
             changes = None
         else:
             changes = describe_change_set['Changes']
 
-        dictionary['Changes'].append(
+        response['Changes'].append(
             {'StackName': stack_name, 'ParameterDiff': param_diff, 'TemplateDiff': tem_diff, 'ChangeSets': changes})
-    return dictionary
+    return response
