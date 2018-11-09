@@ -165,12 +165,12 @@ def calculate_template_diff(cur_template, new_template):
     return ''.join(t_diff)
 
 
-def calculate_parameter_diff(stack_name, describe_change_set, describe_stack):
-    c_p = describe_stack['Stacks'][0]['Parameters']
+def calculate_parameter_diff(stack_name, change_set, stack):
+    c_p = stack['Parameters']
     p = Parameters(stack_name)
     cur_dict = p.read_parameters(c_p)
     p.old_values(cur_dict)
-    n_p = describe_change_set['Parameters']
+    n_p = change_set['Parameters']
     new_dict = p.read_parameters(n_p)
     p.new_values(new_dict)
     summary = cfn.get_template_summary(StackName=stack_name)['Parameters']
