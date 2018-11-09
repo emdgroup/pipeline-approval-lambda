@@ -63,10 +63,10 @@ if TAG:
         s3.copy_object(
             CopySource={
                 Bucket: bucket,
-                Key: f'release/{TAG}/lambda.zip',
+                Key: f'commits/{COMMIT}.zip',
             }
             Bucket: bucket,
-            Key: f'commits/{COMMIT}.zip',
+            Key: f'release/{TAG}/lambda.zip',
         )
 
 else:
