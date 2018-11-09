@@ -64,7 +64,7 @@ if TAG:
             CopySource={
                 Bucket: bucket,
                 Key: f'commits/{COMMIT}.zip',
-            }
+            },
             Bucket: bucket,
             Key: f'release/{TAG}/lambda.zip',
         )
