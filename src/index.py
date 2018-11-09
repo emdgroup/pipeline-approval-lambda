@@ -70,15 +70,16 @@ def lambda_handler(event, context):
     job = event['CodePipeline.job']
     job_id = event['CodePipeline.job']['id']
     try:
-        params = json.loads(job['data']['actionConfiguration']['configuration']['UserParameters'])
+        params = json.loads(job['data']['actionConfiguration']
+                            ['configuration']['UserParameters'])
     except:
         pipeline.put_job_failure_result(
-                jobId=job_id,
-                failureDetails={
-                    'type': 'JobFailed',
-                    'message': 'UserParameters is not valid JSON',
-                }
-            )
+            jobId=job_id,
+            failureDetails={
+                'type': 'JobFailed',
+                'message': 'UserParameters is not valid JSON',
+            }
+        )
     change_sets = get_changeset_id(params['Stacks'])
     if len(change_sets) == 0:
         pipeline.put_job_success_result(jobId=job_id)
@@ -177,7 +178,7 @@ def calculate_parameter_diff(stack_name, describe_change_set, describe_stack):
     return all_parameters
 
 
-def calculate_diff(stackchanges, job_id, account_id):
+def calculate_diff(change_set_ids, job_id, account_id):
     print("calculating diff")
     try:
         name = pipeline.get_job_details(
@@ -196,19 +197,19 @@ def calculate_diff(stackchanges, job_id, account_id):
                         'SessionToken': credentials['SessionToken']},
         'Changes': []
     }
-    print(stackchanges)
-    for ChangeSetId in stackchanges:
-        describe_change_set = cfn.describe_change_set(
-            ChangeSetName=ChangeSetId)
-        stack_name = describe_change_set['StackName']
+    print(change_set_ids)
+    for change_set_id in change_set_ids:
+        change_set = cfn.describe_change_set(
+            ChangeSetName=change_set_id)
+        stack_name = change_set['StackName']
 
-        describe_stack = cfn.describe_stacks(StackName=stack_name)
-        status = describe_stack['Stacks'][0]['StackStatus']
+        stack = cfn.describe_stacks(StackName=stack_name)['Stacks'][0]
 
-        new_template_info = cfn.get_template(ChangeSetName=ChangeSetId)
+        new_template_info = cfn.get_template(ChangeSetName=change_set_id)
         new_template = yaml.dump(yaml.load(json.dumps(
             new_template_info['TemplateBody'], sort_keys=True, default=str)), default_flow_style=False)
 
+        status = stack['StackStatus']
         if status == 'REVIEW_IN_PROGRESS':
             param_diff = {}
             tem_diff = None
@@ -216,18 +217,13 @@ def calculate_diff(stackchanges, job_id, account_id):
             cur_template_info = cfn.get_template(StackName=stack_name)
             cur_template = yaml.dump(yaml.load(json.dumps(
                 cur_template_info['TemplateBody'], sort_keys=True, default=str)), default_flow_style=False)
-            cur_parameters = yaml.dump(yaml.load(json.dumps(
-                describe_stack['Stacks'][0]['Parameters'], sort_keys=True, default=str)), default_flow_style=False)
-            param_diff = {}
-            #calculate_parameter_diff(
-            #    stack_name, describe_change_set, describe_stack)
-            tem_diff = calculate_template_diff(cur_template, new_template)
 
-        if len(describe_change_set['Changes']) == 0:
-            changes = None
-        else:
-            changes = describe_change_set['Changes']
 
-        response['Changes'].append(
-            {'StackName': stack_name, 'ParameterDiff': param_diff, 'TemplateDiff': tem_diff, 'ChangeSets': changes, 'OldTemplate': cur_template})
+        response['Changes'].append({
+            'StackName': stack_name,
+            'ParameterDiff': calculate_parameter_diff(stack_name, change_set, stack),
+            'TemplateDiff': calculate_template_diff(cur_template, new_template),
+            'ChangeSets': change_set['Changes'],
+            'OldTemplate': cur_template
+        })
     return response
