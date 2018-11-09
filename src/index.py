@@ -15,6 +15,7 @@ TOPIC = os.getenv('TOPIC')
 ROLE_ARN = os.environ['ROLE_ARN']
 AWS_REGION = os.environ['AWS_DEFAULT_REGION']
 WEB_URL = os.environ['WEB_URL']
+BUCKET = os.environ['BUCKET']
 
 
 class Parameters:
@@ -56,7 +57,7 @@ class Parameters:
             if 'DefaultValue' in key:
                 self.defaults[key['ParameterKey']] = key['DefaultValue']
             else:
-                self.defaults[key['ParameterKey']] = ''
+                self.defaults[key['ParameterKey']] = None
 
         for key, value in self.defaults.items():
             self.params[key]['DefaultValue'] = value
@@ -67,21 +68,31 @@ class Parameters:
 def lambda_handler(event, context):
     print(event)
     job = event['CodePipeline.job']
-    JobId = event['CodePipeline.job']['id']
-    UserParameters = event['CodePipeline.job']['data']['actionConfiguration']['configuration']['UserParameters']
-    change_sets = get_ChangeSetId(UserParameters)
+    job_id = event['CodePipeline.job']['id']
+    try:
+        params = json.loads(job['data']['actionConfiguration']['configuration']['UserParameters'])
+    except:
+        pipeline.put_job_failure_result(
+                jobId=job_id,
+                failureDetails={
+                    'type': 'JobFailed',
+                    'message': 'UserParameters is not valid JSON',
+                }
+            )
+    change_sets = get_changeset_id(params['Stacks'])
     if len(change_sets) == 0:
-        pipeline.put_job_success_result(jobId=JobId)
+        pipeline.put_job_success_result(jobId=job_id)
     else:
         try:
             describe_change_set(change_sets, job)
         except Exception as e:
             print(e)
+            raise e
             pipeline.put_job_failure_result(
-                jobId=JobId,
+                jobId=job_id,
                 failureDetails={
                     'type': 'JobFailed',
-                    'message': 'Pipeline Failed'
+                    'message': e,
                 }
             )
 
@@ -98,48 +109,50 @@ def aws_session(job_id):
     return response['Credentials']
 
 
-def get_ChangeSetId(UserParameters):
-    ChangeSetIds = []
-    for stack in UserParameters.split(','):
+def get_changeset_id(stacks):
+    change_sets = []
+    for stack in stacks.split(','):
         cfnchange = cfn.list_change_sets(StackName=stack)
         if cfnchange['Summaries'][0]['Status'] == 'FAILED':
             print("no change set for the stack : " + stack)
         else:
-            ChangeSetIds.append(cfnchange['Summaries'][0]['ChangeSetId'])
-    return ChangeSetIds
+            change_sets.append(cfnchange['Summaries'][0]['ChangeSetId'])
+    return change_sets
 
 
 def describe_change_set(change_sets, job):
     account_id = job['accountId']
     job_id = job['id']
     all_changes = calculate_diff(change_sets, job_id, account_id)
-    bucket = job['data']['inputArtifacts'][0]['location']['s3Location']['bucketName']
-    s3client.put_object(Body=json.dumps(all_changes), Bucket=bucket,
-                        Key=f'approvals/{job_id}.json', ContentType='application/json')
+    s3client.put_object(Bucket=BUCKET,
+                        Key=f'approvals/{job_id}.json',
+                        Body=json.dumps(all_changes),
+                        ContentType='application/json',
+                        )
     url = s3client.generate_presigned_url(
         ClientMethod='get_object',
         Params={
-            'Bucket': bucket,
+            'Bucket': BUCKET,
             'Key': f'approvals/{job_id}.json'
         },
         ExpiresIn=1800)
     signature = url.split('?')[-1]
-    signed_url = f'{WEB_URL}/#/{bucket}/approvals/{job_id}.json?{signature}'
+    signed_url = f'{WEB_URL}#/{BUCKET}/approvals/{job_id}.json?{signature}'
     send_notification(f'Review the ChangeSets at: {signed_url}')
 
 
 def send_notification(message):
-    sns.publish(TopicArn=TOPIC, Message=message,
-                Subject='ChangeSets for the CloudFormation Stacks')
+    #sns.publish(TopicArn=TOPIC, Message=message,
+    #            Subject='ChangeSets for the CloudFormation Stacks')
     print("notification send to the email")
 
 
 def calculate_template_diff(cur_template, new_template):
-    t_diff = difflib.unified_diff(cur_template.splitlines(
-        True), new_template.splitlines(True))
-    tem_diff = ''.join(line for line in t_diff if any(
-        [line.startswith('+'), line.startswith('-')]))
-    return tem_diff
+    t_diff = difflib.unified_diff(
+        cur_template.splitlines(True),
+        new_template.splitlines(True),
+    )
+    return ''.join(t_diff)
 
 
 def calculate_parameter_diff(stack_name, describe_change_set, describe_stack):
@@ -157,9 +170,13 @@ def calculate_parameter_diff(stack_name, describe_change_set, describe_stack):
 
 def calculate_diff(stackchanges, job_id, account_id):
     print("calculating diff")
-    name = pipeline.get_job_details(
-        jobId=job_id)['jobDetails']['data']['pipelineContext']['pipelineName']
+    try:
+        name = pipeline.get_job_details(
+            jobId=job_id)['jobDetails']['data']['pipelineContext']['pipelineName']
+    except:
+        name = 'unkown'
     print(name)
+    # catch InvalidJobStateException if job has already been processed
     credentials = aws_session(job_id)
 
     response = {
@@ -170,7 +187,7 @@ def calculate_diff(stackchanges, job_id, account_id):
                         'SessionToken': credentials['SessionToken']},
         'Changes': []
     }
-    print(response)
+    print(stackchanges)
     for ChangeSetId in stackchanges:
         describe_change_set = cfn.describe_change_set(
             ChangeSetName=ChangeSetId)
@@ -181,19 +198,20 @@ def calculate_diff(stackchanges, job_id, account_id):
 
         new_template_info = cfn.get_template(ChangeSetName=ChangeSetId)
         new_template = yaml.dump(yaml.load(json.dumps(
-            new_template_info['TemplateBody'], sort_keys=True, default=str)))
+            new_template_info['TemplateBody'], sort_keys=True, default=str)), default_flow_style=False)
 
         if status == 'REVIEW_IN_PROGRESS':
             param_diff = {}
-            tem_diff = ''
+            tem_diff = None
         else:
             cur_template_info = cfn.get_template(StackName=stack_name)
             cur_template = yaml.dump(yaml.load(json.dumps(
-                cur_template_info['TemplateBody'], sort_keys=True, default=str)))
+                cur_template_info['TemplateBody'], sort_keys=True, default=str)), default_flow_style=False)
             cur_parameters = yaml.dump(yaml.load(json.dumps(
-                describe_stack['Stacks'][0]['Parameters'], sort_keys=True, default=str)))
-            param_diff = calculate_parameter_diff(
-                stack_name, describe_change_set, describe_stack)
+                describe_stack['Stacks'][0]['Parameters'], sort_keys=True, default=str)), default_flow_style=False)
+            param_diff = {}
+            #calculate_parameter_diff(
+            #    stack_name, describe_change_set, describe_stack)
             tem_diff = calculate_template_diff(cur_template, new_template)
 
         if len(describe_change_set['Changes']) == 0:
@@ -202,5 +220,5 @@ def calculate_diff(stackchanges, job_id, account_id):
             changes = describe_change_set['Changes']
 
         response['Changes'].append(
-            {'StackName': stack_name, 'ParameterDiff': param_diff, 'TemplateDiff': tem_diff, 'ChangeSets': changes})
+            {'StackName': stack_name, 'ParameterDiff': param_diff, 'TemplateDiff': tem_diff, 'ChangeSets': changes, 'OldTemplate': cur_template})
     return response
