@@ -4,7 +4,6 @@ import json
 import yaml
 import difflib
 import json
-from botocore.client import Config
 
 cfn = boto3.client('cloudformation')
 s3client = boto3.client('s3')
@@ -16,54 +15,6 @@ ROLE_ARN = os.environ['ROLE_ARN']
 AWS_REGION = os.environ['AWS_DEFAULT_REGION']
 WEB_URL = os.environ['WEB_URL']
 BUCKET = os.environ['BUCKET']
-
-
-class Parameters:
-    def __init__(self, stack_name):
-        self.stack = stack_name
-        self.params = {}
-        self.defaults = {}
-
-    def read_parameters(self, parameter_values):
-        param_values = []
-        param_keys = []
-        for value in parameter_values:
-            param_values.append(value.values()[0])
-            param_keys.append(value.values()[1])
-
-        for key in param_keys:
-            if key in self.params:
-                continue
-            else:
-                self.params[key] = {'OldValue': None,
-                                    'NewValue': None,
-                                    'DefaultValue': None,
-                                    }
-
-        key_value = dict(zip(param_keys, param_values))
-
-        return key_value
-
-    def old_values(self, old_values):
-        for key, value in old_values.items():
-            self.params[key]['OldValue'] = value
-
-    def new_values(self, new_values):
-        for key, value in new_values.items():
-            self.params[key]['NewValue'] = value
-
-    def default_values(self, default_values):
-        for key in default_values:
-            if 'DefaultValue' in key:
-                self.defaults[key['ParameterKey']] = key['DefaultValue']
-            else:
-                self.defaults[key['ParameterKey']] = None
-
-        for key, value in self.defaults.items():
-            self.params[key]['DefaultValue'] = value
-
-        return self.params
-
 
 def lambda_handler(event, context):
     print(event)
@@ -165,17 +116,21 @@ def calculate_template_diff(cur_template, new_template):
     return ''.join(t_diff)
 
 
-def calculate_parameter_diff(stack_name, change_set, stack):
-    c_p = stack['Parameters']
-    p = Parameters(stack_name)
-    cur_dict = p.read_parameters(c_p)
-    p.old_values(cur_dict)
-    n_p = change_set['Parameters']
-    new_dict = p.read_parameters(n_p)
-    p.new_values(new_dict)
-    summary = cfn.get_template_summary(StackName=stack_name)['Parameters']
-    all_parameters = p.default_values(summary)
-    return all_parameters
+def collect_parameters(template, change_set, stack):
+    tpl_params = template['Parameters']
+    old = dict((x['ParameterKey'], x['ParameterValue']) for x in stack['Parameters'])
+    new = dict((x['ParameterKey'], x['ParameterValue']) for x in change_set['Parameters'])
+    params = []
+    for name in tpl_params:
+        param = {
+            'Name': name,
+            'Default': tpl_params[name].get('Default'),
+            'CurrentValue': old[name],
+            'NewValue': new[name],
+        }
+        params.append(param)
+
+    return params
 
 
 def calculate_diff(change_set_ids, job_id, account_id):
@@ -195,7 +150,7 @@ def calculate_diff(change_set_ids, job_id, account_id):
         'Credentials': {'AccessKeyId': credentials['AccessKeyId'],
                         'SecretAccessKey': credentials['SecretAccessKey'],
                         'SessionToken': credentials['SessionToken']},
-        'Changes': []
+        'Changes': [],
     }
     print(change_set_ids)
     for change_set_id in change_set_ids:
@@ -219,11 +174,11 @@ def calculate_diff(change_set_ids, job_id, account_id):
                 cur_template_info['TemplateBody'], sort_keys=True, default=str)), default_flow_style=False)
 
 
-        response['Changes'].append({
+        response['Stacks'].append({
             'StackName': stack_name,
-            'ParameterDiff': calculate_parameter_diff(stack_name, change_set, stack),
+            'Parameters': collect_parameters(new_template_info['TemplateBody'], change_set, stack),
             'TemplateDiff': calculate_template_diff(cur_template, new_template),
-            'ChangeSets': change_set['Changes'],
+            'Changes': change_set['Changes'],
             'OldTemplate': cur_template
         })
     return response
