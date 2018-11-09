@@ -16,6 +16,7 @@ AWS_REGION = os.environ['AWS_DEFAULT_REGION']
 WEB_URL = os.environ['WEB_URL']
 BUCKET = os.environ['BUCKET']
 
+
 def lambda_handler(event, context):
     print(event)
     job = event['CodePipeline.job']
@@ -118,8 +119,10 @@ def calculate_template_diff(cur_template, new_template):
 
 def collect_parameters(template, change_set, stack):
     tpl_params = template['Parameters']
-    old = dict((x['ParameterKey'], x['ParameterValue']) for x in stack['Parameters'])
-    new = dict((x['ParameterKey'], x['ParameterValue']) for x in change_set['Parameters'])
+    old = dict((x['ParameterKey'], x['ParameterValue'])
+               for x in stack['Parameters'])
+    new = dict((x['ParameterKey'], x['ParameterValue'])
+               for x in change_set['Parameters'])
     params = []
     for name in tpl_params:
         param = {
@@ -142,17 +145,8 @@ def calculate_diff(change_set_ids, job_id, account_id):
         name = 'unkown'
     print(name)
     # catch InvalidJobStateException if job has already been processed
-    credentials = aws_session(job_id)
-
-    response = {
-        'Pipeline': {
-            'Region': AWS_REGION, 'JobId': job_id, 'PipelineName': name, 'AccountId': account_id},
-        'Credentials': {'AccessKeyId': credentials['AccessKeyId'],
-                        'SecretAccessKey': credentials['SecretAccessKey'],
-                        'SessionToken': credentials['SessionToken']},
-        'Changes': [],
-    }
     print(change_set_ids)
+    stacks = []
     for change_set_id in change_set_ids:
         change_set = cfn.describe_change_set(
             ChangeSetName=change_set_id)
@@ -173,12 +167,20 @@ def calculate_diff(change_set_ids, job_id, account_id):
             cur_template = yaml.dump(yaml.load(json.dumps(
                 cur_template_info['TemplateBody'], sort_keys=True, default=str)), default_flow_style=False)
 
-
-        response['Stacks'].append({
+        stacks.append({
             'StackName': stack_name,
             'Parameters': collect_parameters(new_template_info['TemplateBody'], change_set, stack),
             'TemplateDiff': calculate_template_diff(cur_template, new_template),
             'Changes': change_set['Changes'],
             'OldTemplate': cur_template
         })
-    return response
+
+    credentials = aws_session(job_id)
+    return {
+        'Pipeline': {
+            'Region': AWS_REGION, 'JobId': job_id, 'PipelineName': name, 'AccountId': account_id},
+        'Credentials': {'AccessKeyId': credentials['AccessKeyId'],
+                        'SecretAccessKey': credentials['SecretAccessKey'],
+                        'SessionToken': credentials['SessionToken']},
+        'Stacks': stacks,
+    }
