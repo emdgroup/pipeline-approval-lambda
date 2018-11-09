@@ -142,9 +142,13 @@ def describe_change_set(change_sets, job):
 
 
 def send_notification(message):
-    #sns.publish(TopicArn=TOPIC, Message=message,
-    #            Subject='ChangeSets for the CloudFormation Stacks')
-    print("notification send to the email")
+    if TOPIC:
+        sns.publish(
+            TopicArn=TOPIC,
+            Message=message,
+            Subject='ChangeSets for the CloudFormation Stacks'
+        )
+        print("notification send to the email")
 
 
 def calculate_template_diff(cur_template, new_template):
