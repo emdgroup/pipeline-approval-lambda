@@ -111,7 +111,7 @@ def aws_session(job_id):
 
 def get_changeset_id(stacks):
     change_sets = []
-    for stack in stacks.split(','):
+    for stack in stacks:
         cfnchange = cfn.list_change_sets(StackName=stack)
         if cfnchange['Summaries'][0]['Status'] == 'FAILED':
             print("no change set for the stack : " + stack)
