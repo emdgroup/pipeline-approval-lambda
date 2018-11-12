@@ -31,7 +31,6 @@ def create_buckets():
             else:
               regional_s3.create_bucket(
                   Bucket=bucket_name,
-                  ACL='public-read',
                   CreateBucketConfiguration={
                       'LocationConstraint': bucket_location,
                   }
