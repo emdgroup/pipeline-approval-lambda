@@ -6,9 +6,9 @@ import os
 import json
 
 
-BRANCH = os.environ['TRAVIS_BRANCH']
-COMMIT = os.environ['TRAVIS_COMMIT']
-TAG = os.environ['TRAVIS_TAG']
+BRANCH = os.environ.get('TRAVIS_BRANCH')
+COMMIT = os.environ.get('TRAVIS_COMMIT')
+TAG = os.environ.get('TRAVIS_TAG')
 
 
 def create_buckets():
@@ -18,7 +18,7 @@ def create_buckets():
     buckets = []
 
     for region in regions:
-        bucket_name = f'pipeline-changes-{region}'
+        bucket_name = f'pipeline-approval-{region}'
         buckets.append(bucket_name)
         bucket_location = None if region == 'us-east-1' else 'EU' if region == 'eu-west-1' else region
         regional_s3 = boto3.client('s3', region_name=region)
