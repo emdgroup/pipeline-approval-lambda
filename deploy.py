@@ -27,10 +27,11 @@ def create_buckets():
         except Exception as ex:
             print(f'bucket in region {region} does not exist, creating one...')
             if(bucket_location == None):
-                regional_s3.create_bucket(Bucket=bucket_name)
+                regional_s3.create_bucket(Bucket=bucket_name,ACL='private')
             else:
               regional_s3.create_bucket(
                   Bucket=bucket_name,
+                  ACL='private',
                   CreateBucketConfiguration={
                       'LocationConstraint': bucket_location,
                   }
@@ -48,6 +49,18 @@ def create_buckets():
                   'Principal': '*',
                 }]
               })
+            )
+
+            regional_s3.put_bucket_lifecycle_configuration(
+                Bucket=bucket_name,
+                LifecycleConfiguration={
+                    'Rules': [{
+                        'Expiration': { 'Days': 14 },
+                        'Prefix': 'commits/',
+                        'Status': 'Enabled',
+                    }]
+                }
+
             )
 
     return buckets
@@ -68,7 +81,7 @@ if TAG:
             Key=f'release/{TAG}/lambda.zip',
         )
 
-else:
+elif BRANCH and COMMIT:
     subprocess.run(['zip', '-qr', 'lambda.zip', '.'], cwd='src/')
 
     with open('src/lambda.zip', 'rb') as file:
