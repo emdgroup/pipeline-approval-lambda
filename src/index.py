@@ -128,8 +128,8 @@ def collect_parameters(template, change_set, stack):
         param = {
             'Name': name,
             'Default': tpl_params[name].get('Default'),
-            'CurrentValue': old[name],
-            'NewValue': new[name],
+            'CurrentValue': old.get(name),
+            'NewValue': new.get(name),
         }
         params.append(param)
 
