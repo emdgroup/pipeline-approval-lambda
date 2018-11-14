@@ -1,15 +1,11 @@
 import boto3
+from botocore.client import Config
 import os
 import json
 import yaml
 import difflib
 import json
 from urllib.parse import urlparse
-
-cfn = boto3.client('cloudformation')
-s3client = boto3.client('s3')
-pipeline = boto3.client('codepipeline')
-sns = boto3.client('sns')
 
 TOPIC = os.getenv('TOPIC')
 ROLE_ARN = os.environ['ROLE_ARN']
@@ -18,13 +14,19 @@ WEB_URL = os.environ['WEB_URL']
 BUCKET = os.environ['BUCKET']
 BUCKET_URL = os.environ['BUCKET_URL']
 
+cfn = boto3.client('cloudformation')
+s3client = boto3.client('s3', config=Config(signature_version='s3v4', s3={'addressing_style': 'path'})))
+pipeline=boto3.client('codepipeline')
+sns=boto3.client('sns')
+
+
 
 def lambda_handler(event, context):
-    job = event['CodePipeline.job']
-    job_id = event['CodePipeline.job']['id']
+    job=event['CodePipeline.job']
+    job_id=event['CodePipeline.job']['id']
     print(json.dumps({'JobId': job_id}))
     try:
-        params = json.loads(job['data']['actionConfiguration']
+        params=json.loads(job['data']['actionConfiguration']
                             ['configuration']['UserParameters'])
     except:
         pipeline.put_job_failure_result(
@@ -97,7 +99,7 @@ def describe_change_set(change_sets, job):
         },
         ExpiresIn=1800)
     parsed = urlparse(url)
-    signed_url = f'{WEB_URL}#/{BUCKET_URL}{parsed.path}?{parsed.query}'
+    signed_url = f'{WEB_URL}#/{url.split("//")[1]}'
     send_notification(f'Review the ChangeSets at: {signed_url}')
 
 
