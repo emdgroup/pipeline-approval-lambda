@@ -97,7 +97,7 @@ def describe_change_set(change_sets, job):
         },
         ExpiresIn=1800)
     parsed = urlparse(url)
-    signed_url = f'{WEB_URL}#/{BUCKET_URL}{parsed.path}{parsed.query}'
+    signed_url = f'{WEB_URL}#/{BUCKET_URL}{parsed.path}?{parsed.query}'
     send_notification(f'Review the ChangeSets at: {signed_url}')
 
 
