@@ -20,9 +20,9 @@ BUCKET_URL = os.environ['BUCKET_URL']
 
 
 def lambda_handler(event, context):
-    print(event)
     job = event['CodePipeline.job']
     job_id = event['CodePipeline.job']['id']
+    print(json.dumps({'JobId': job_id}))
     try:
         params = json.loads(job['data']['actionConfiguration']
                             ['configuration']['UserParameters'])
