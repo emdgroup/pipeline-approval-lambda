@@ -118,11 +118,11 @@ def calculate_template_diff(cur_template, new_template):
 
 
 def collect_parameters(template, change_set, stack):
-    tpl_params = template['Parameters']
+    tpl_params = template.get('Parameters') or []
     old = dict((x['ParameterKey'], x['ParameterValue'])
-               for x in stack['Parameters'])
+               for x in stack.get('Parameters') or [])
     new = dict((x['ParameterKey'], x['ParameterValue'])
-               for x in change_set['Parameters'])
+               for x in change_set.get('Parameters') or [])
     params = []
     for name in tpl_params:
         param = {
