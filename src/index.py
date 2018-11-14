@@ -162,6 +162,7 @@ def calculate_diff(change_set_ids, job_id, account_id):
         if status == 'REVIEW_IN_PROGRESS':
             param_diff = {}
             tem_diff = None
+            cur_template = ''
         else:
             cur_template_info = cfn.get_template(StackName=stack_name)
             cur_template = yaml.dump(yaml.load(json.dumps(
