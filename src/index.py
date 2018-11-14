@@ -4,6 +4,7 @@ import json
 import yaml
 import difflib
 import json
+from urllib.parse import urlparse
 
 cfn = boto3.client('cloudformation')
 s3client = boto3.client('s3')
@@ -95,8 +96,8 @@ def describe_change_set(change_sets, job):
             'Key': f'approvals/{job_id}.json'
         },
         ExpiresIn=1800)
-    signature = url.split('?')[-1]
-    signed_url = f'{WEB_URL}#//{BUCKET_URL}/approvals/{job_id}.json?{signature}'
+    parsed = urlparse(url)
+    signed_url = f'{WEB_URL}#/{BUCKET_URL}{parsed.path}{parsed.query}'
     send_notification(f'Review the ChangeSets at: {signed_url}')
 
 
