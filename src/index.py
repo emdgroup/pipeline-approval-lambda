@@ -15,6 +15,7 @@ ROLE_ARN = os.environ['ROLE_ARN']
 AWS_REGION = os.environ['AWS_DEFAULT_REGION']
 WEB_URL = os.environ['WEB_URL']
 BUCKET = os.environ['BUCKET']
+BUCKET_URL = os.environ['BUCKET_URL']
 
 
 def lambda_handler(event, context):
@@ -95,7 +96,7 @@ def describe_change_set(change_sets, job):
         },
         ExpiresIn=1800)
     signature = url.split('?')[-1]
-    signed_url = f'{WEB_URL}#/{BUCKET}/approvals/{job_id}.json?{signature}'
+    signed_url = f'{WEB_URL}#//{BUCKET_URL}/approvals/{job_id}.json?{signature}'
     send_notification(f'Review the ChangeSets at: {signed_url}')
 
 
