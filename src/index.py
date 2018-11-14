@@ -15,7 +15,7 @@ BUCKET = os.environ['BUCKET']
 BUCKET_URL = os.environ['BUCKET_URL']
 
 cfn = boto3.client('cloudformation')
-s3client = boto3.client('s3', config=Config(signature_version='s3v4', s3={'addressing_style': 'path'})))
+s3client = boto3.client('s3', config=Config(signature_version='s3v4', s3={'addressing_style': 'path'}))
 pipeline=boto3.client('codepipeline')
 sns=boto3.client('sns')
 
