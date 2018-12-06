@@ -1,8 +1,3 @@
-Parameters:
-  ApprovalNotificationTopic:
-    Type: String
-    Description: SNS Topic ARN where approval notifications are send to.
-
 Resources:
   Approvals:
     Type: AWS::S3::Bucket
@@ -41,14 +36,12 @@ Resources:
         Statement:
           - Effect: Allow
             Action:
-              - s3:*
-            Resource:
-              - !Sub arn:aws:s3:::${Approvals}/*
-              - !Sub arn:aws:s3:::${Approvals}
+              - s3:PutObject
+              - s3:GetObject
+            Resource: !Sub arn:aws:s3:::${Approvals}/*
           - Effect: Allow
-            Resource: !Ref ApprovalNotificationTopic
-            Action:
-              - sns:Publish
+            Resource: '*'
+            Action: sns:Publish
           - Effect: Allow
             Action:
               - cloudformation:DescribeChangeSet
@@ -63,8 +56,6 @@ Resources:
               - codepipeline:PutJobFailureResult
               - codepipeline:PutJobSuccessResult
               - codepipeline:GetJobDetails
-            # CodePipeline doesn't support resource-level permissions
-            # https://docs.aws.amazon.com/codepipeline/latest/userguide/permissions-reference.html
             Resource: '*'
           - Effect: Allow
             Action: sts:AssumeRole
@@ -83,7 +74,6 @@ Resources:
           REGION: !Ref AWS::Region
           ROLE_ARN: !GetAtt ApprovalLambdaRole.Arn
           WEB_URL: https://emdgroup.github.io/pipeline-approval/
-          TOPIC: !Ref ApprovalNotificationTopic
           BUCKET: !Ref Approvals
           BUCKET_URL: !GetAtt Approvals.RegionalDomainName
       Runtime: python3.6
@@ -95,3 +85,9 @@ Resources:
     Properties:
       LogGroupName: !Sub /aws/lambda/${ApprovalLambda}
       RetentionInDays: 7
+
+Outputs:
+  FunctionArn:
+    Value: !GetAtt ApprovalLambda.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}:FunctionArn
