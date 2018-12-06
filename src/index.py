@@ -113,7 +113,7 @@ def send_notification(changes, topic_arn, signed_url):
     sns.publish(
         TopicArn=topic_arn,
         Message=f'Please approve or reject changes for {stacks}\n\n{signed_url}',
-        Subject=f'Approval required: CodePipeline {changes['Pipeline']['PipelineName']} ({AWS_REGION})'
+        Subject=f'Approval required: CodePipeline {changes["Pipeline"]["PipelineName"]} ({AWS_REGION})'
     )
 
 
