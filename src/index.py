@@ -26,8 +26,9 @@ def lambda_handler(event, context):
     job_id=event['CodePipeline.job']['id']
     print(json.dumps({'JobId': job_id}))
     try:
-        params=json.loads(job['data']['actionConfiguration']
-                            ['configuration']['UserParameters'])
+        params=yaml.safe_load(
+            job['data']['actionConfiguration']['configuration']['UserParameters']
+        )
     except:
         pipeline.put_job_failure_result(
             jobId=job_id,
@@ -154,7 +155,7 @@ def calculate_diff(change_set_ids, job):
         stack = cfn.describe_stacks(StackName=stack_name)['Stacks'][0]
 
         new_template_info = cfn.get_template(ChangeSetName=change_set_id)
-        new_template = yaml.dump(yaml.load(json.dumps(
+        new_template = yaml.dump(yaml.safe_load(json.dumps(
             new_template_info['TemplateBody'], sort_keys=True, default=str)), default_flow_style=False)
 
         status = stack['StackStatus']
@@ -164,7 +165,7 @@ def calculate_diff(change_set_ids, job):
             cur_template = ''
         else:
             cur_template_info = cfn.get_template(StackName=stack_name)
-            cur_template = yaml.dump(yaml.load(json.dumps(
+            cur_template = yaml.dump(yaml.safe_load(json.dumps(
                 cur_template_info['TemplateBody'], sort_keys=True, default=str)), default_flow_style=False)
 
         stacks.append({
