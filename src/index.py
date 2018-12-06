@@ -36,21 +36,26 @@ def lambda_handler(event, context):
                 'message': 'UserParameters is not valid JSON',
             }
         )
-    change_sets = get_changeset_id(params['Stacks'])
+    change_sets = get_changesets(params['Stacks'])
     if len(change_sets) == 0:
-        pipeline.put_job_success_result(jobId=job_id)
-    else:
-        try:
-            describe_change_set(change_sets, job)
-        except Exception as e:
-            print(e)
-            pipeline.put_job_failure_result(
-                jobId=job_id,
-                failureDetails={
-                    'type': 'JobFailed',
-                    'message': e,
-                }
-            )
+        return pipeline.put_job_success_result(jobId=job_id)
+
+    try:
+        job_details = pipeline.get_job_details(jobId=job_id)['jobDetails']
+        job['pipelineName'] = job_details['data']['pipelineContext']['pipelineName']
+
+        all_changes = calculate_diff(change_sets, job)
+        signed_url = put_changes(all_changes, job)
+        send_notification(all_changes, params['TopicArn'], signed_url)
+    except Exception as e:
+        print(e)
+        pipeline.put_job_failure_result(
+            jobId=job_id,
+            failureDetails={
+                'type': 'JobFailed',
+                'message': e,
+            }
+        )
 
 
 def aws_session(job_id):
@@ -69,7 +74,7 @@ def aws_session(job_id):
     return response['Credentials']
 
 
-def get_changeset_id(stacks):
+def get_changesets(stacks):
     change_sets = []
     for stack in stacks:
         cfnchange = list(filter(
@@ -86,10 +91,8 @@ def get_changeset_id(stacks):
     return change_sets
 
 
-def describe_change_set(change_sets, job):
-    account_id = job['accountId']
+def put_changes(all_changes, job):
     job_id = job['id']
-    all_changes = calculate_diff(change_sets, job_id, account_id)
     s3client.put_object(Bucket=BUCKET,
                         Key=f'approvals/{job_id}.json',
                         Body=json.dumps(all_changes),
@@ -102,19 +105,16 @@ def describe_change_set(change_sets, job):
             'Key': f'approvals/{job_id}.json'
         },
         ExpiresIn=1800)
-    parsed = urlparse(url)
-    signed_url = f'{WEB_URL}#/{url.split("//")[1]}'
-    send_notification(f'Review the ChangeSets at: {signed_url}')
+    return f'{WEB_URL}#/{url.split("//")[1]}'
 
 
-def send_notification(message):
-    if TOPIC:
-        sns.publish(
-            TopicArn=TOPIC,
-            Message=message,
-            Subject='ChangeSets for the CloudFormation Stacks'
-        )
-        print("notification send to the email")
+def send_notification(changes, topic_arn, signed_url):
+    stacks = ', '.join(list(map(lambda x: x['StackName'], change['Stacks'])))
+    sns.publish(
+        TopicArn=topic_arn,
+        Message=f'Please approve or reject changes for {stacks}\n\n{signed_url}',
+        Subject=f'Approval required: CodePipeline {changes['Pipeline']['PipelineName']} ({AWS_REGION})'
+    )
 
 
 def calculate_template_diff(cur_template, new_template):
@@ -144,16 +144,7 @@ def collect_parameters(template, change_set, stack):
     return params
 
 
-def calculate_diff(change_set_ids, job_id, account_id):
-    print("calculating diff")
-    try:
-        name = pipeline.get_job_details(
-            jobId=job_id)['jobDetails']['data']['pipelineContext']['pipelineName']
-    except:
-        name = 'unkown'
-    print(name)
-    # catch InvalidJobStateException if job has already been processed
-    print(change_set_ids)
+def calculate_diff(change_set_ids, job):
     stacks = []
     for change_set_id in change_set_ids:
         change_set = cfn.describe_change_set(
@@ -184,12 +175,18 @@ def calculate_diff(change_set_ids, job_id, account_id):
             'OldTemplate': cur_template
         })
 
-    credentials = aws_session(job_id)
+    credentials = aws_session(job['id'])
     return {
         'Pipeline': {
-            'Region': AWS_REGION, 'JobId': job_id, 'PipelineName': name, 'AccountId': account_id},
-        'Credentials': {'AccessKeyId': credentials['AccessKeyId'],
-                        'SecretAccessKey': credentials['SecretAccessKey'],
-                        'SessionToken': credentials['SessionToken']},
+            'Region': AWS_REGION,
+            'JobId': job['id'],
+            'PipelineName': job['pipelineName'],
+            'AccountId': job['accountId'],
+        },
+        'Credentials': {
+            'AccessKeyId': credentials['AccessKeyId'],
+            'SecretAccessKey': credentials['SecretAccessKey'],
+            'SessionToken': credentials['SessionToken'],
+        },
         'Stacks': stacks,
     }
