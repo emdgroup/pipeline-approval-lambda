@@ -7,7 +7,6 @@ import difflib
 import json
 from urllib.parse import urlparse
 
-TOPIC = os.getenv('TOPIC')
 ROLE_ARN = os.environ['ROLE_ARN']
 AWS_REGION = os.environ['AWS_DEFAULT_REGION']
 WEB_URL = os.environ['WEB_URL']
@@ -110,7 +109,7 @@ def put_changes(all_changes, job):
 
 
 def send_notification(changes, topic_arn, signed_url):
-    stacks = ', '.join(list(map(lambda x: x['StackName'], change['Stacks'])))
+    stacks = ', '.join(list(map(lambda x: x['StackName'], changes['Stacks'])))
     sns.publish(
         TopicArn=topic_arn,
         Message=f'Please approve or reject changes for {stacks}\n\n{signed_url}',
