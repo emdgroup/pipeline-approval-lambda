@@ -44,7 +44,6 @@ def lambda_handler(event, context):
             describe_change_set(change_sets, job)
         except Exception as e:
             print(e)
-            raise e
             pipeline.put_job_failure_result(
                 jobId=job_id,
                 failureDetails={
@@ -61,7 +60,11 @@ def aws_session(job_id):
             'Statement': [{
                 'Effect': 'Allow',
                 'Resource': '*',
-                'Action': ['codepipeline:PutJobFailureResult', 'codepipeline:PutJobSuccessResult'],
+                'Action': [
+                    'codepipeline:PutJobFailureResult',
+                    'codepipeline:PutJobSuccessResult',
+                    'codepipeline:GetJobDetails',
+                ],
             }]}))
     return response['Credentials']
 
@@ -75,6 +78,7 @@ def get_changeset_id(stacks):
         ))
 
         if len(cfnchange):
+            # FIXME: doesn't take into account existing changesets
             change_sets.append(cfnchange[0]['ChangeSetId'])
         else:
             print("no change set for the stack : " + stack)
