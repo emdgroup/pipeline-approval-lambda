@@ -1,0 +1,97 @@
+Parameters:
+  ApprovalNotificationTopic:
+    Type: String
+    Description: SNS Topic ARN where approval notifications are send to.
+
+Resources:
+  Approvals:
+    Type: AWS::S3::Bucket
+    Properties:
+      LifecycleConfiguration:
+        Rules:
+          - ExpirationInDays: 1
+            Status: Enabled
+      CorsConfiguration:
+        CorsRules:
+          - AllowedOrigins:
+              - https://emdgroup.github.io
+              - http://localhost:8080
+            AllowedMethods:
+              - GET
+
+  ApprovalLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  ApprovalLambdaPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Roles: [!Ref ApprovalLambdaRole]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - s3:*
+            Resource:
+              - !Sub arn:aws:s3:::${Approvals}/*
+              - !Sub arn:aws:s3:::${Approvals}
+          - Effect: Allow
+            Resource: !Ref ApprovalNotificationTopic
+            Action:
+              - sns:Publish
+          - Effect: Allow
+            Action:
+              - cloudformation:DescribeChangeSet
+              - cloudformation:ListChangeSets
+              - cloudformation:ListStacks
+              - cloudformation:DescribeStacks
+              - cloudformation:GetTemplate
+              - cloudformation:GetTemplateSummary
+            Resource: '*'
+          - Effect: Allow
+            Action:
+              - codepipeline:PutJobFailureResult
+              - codepipeline:PutJobSuccessResult
+              - codepipeline:GetJobDetails
+            # CodePipeline doesn't support resource-level permissions
+            # https://docs.aws.amazon.com/codepipeline/latest/userguide/permissions-reference.html
+            Resource: '*'
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Resource: !GetAtt ApprovalLambdaRole.Arn
+
+  ApprovalLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.lambda_handler
+      Role: !GetAtt ApprovalLambdaRole.Arn
+      Code:
+        S3Bucket: !Sub pipeline-approval-${AWS::Region}
+        S3Key: {{S3Key}}
+      Environment:
+        Variables:
+          REGION: !Ref AWS::Region
+          ROLE_ARN: !GetAtt ApprovalLambdaRole.Arn
+          WEB_URL: https://emdgroup.github.io/pipeline-approval/
+          TOPIC: !Ref ApprovalNotificationTopic
+          BUCKET: !Ref Approvals
+          BUCKET_URL: !GetAtt Approvals.RegionalDomainName
+      Runtime: python3.6
+      MemorySize: 512
+      Timeout: 150
+
+  ApprovalLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ApprovalLambda}
+      RetentionInDays: 7

@@ -70,6 +70,13 @@ s3 = boto3.client('s3')
 print('loading buckets')
 buckets = create_buckets()
 
+def update_cfn(key):
+        with open('cfn/lambda.template.yml', 'r') as file:
+            content = file.read()
+            content = content.replace('{{S3Key}}', key)
+            return content
+
+
 if TAG:
     for bucket in buckets:
         s3.copy_object(
@@ -79,6 +86,12 @@ if TAG:
             },
             Bucket=bucket,
             Key=f'release/{TAG}/lambda.zip',
+        )
+        content = update_cfn(f'release/{TAG}/lambda.zip')
+        s3.put_object(
+            Bucket=bucket,
+            Key=f'release/{TAG}/lambda.template.yml',
+            Body=content,
         )
 
 elif BRANCH and COMMIT:
@@ -96,4 +109,10 @@ elif BRANCH and COMMIT:
                 Bucket=bucket,
                 Key=f'commits/{COMMIT}.zip',
                 Body=data,
+            )
+            content = update_cfn(f'commits/{COMMIT}.zip')
+            s3.put_object(
+                Bucket=bucket,
+                Key=f'{BRANCH}/lambda.template.yml',
+                Body=content,
             )
