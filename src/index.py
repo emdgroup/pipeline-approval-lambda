@@ -48,14 +48,14 @@ def lambda_handler(event, context):
         signed_url = put_changes(all_changes, job)
         send_notification(all_changes, params['TopicArn'], signed_url)
     except Exception as e:
-        print(e)
         pipeline.put_job_failure_result(
             jobId=job_id,
             failureDetails={
                 'type': 'JobFailed',
-                'message': e,
+                'message': 'internal error',
             }
         )
+        raise(e)
 
 
 def aws_session(job_id):
@@ -126,7 +126,8 @@ def calculate_template_diff(cur_template, new_template):
 
 
 def collect_parameters(template, change_set, stack):
-    tpl_params = template.get('Parameters') or []
+    tpl_params = dict((x['ParameterKey'], x.get('DefaultValue'))
+               for x in template.get('Parameters') or [])
     old = dict((x['ParameterKey'], x['ParameterValue'])
                for x in stack.get('Parameters') or [])
     new = dict((x['ParameterKey'], x['ParameterValue'])
@@ -135,7 +136,7 @@ def collect_parameters(template, change_set, stack):
     for name in tpl_params:
         param = {
             'Name': name,
-            'Default': tpl_params[name].get('Default'),
+            'Default': tpl_params[name],
             'CurrentValue': old.get(name),
             'NewValue': new.get(name),
         }
@@ -153,23 +154,29 @@ def calculate_diff(change_set_ids, job):
 
         stack = cfn.describe_stacks(StackName=stack_name)['Stacks'][0]
 
-        new_template_info = cfn.get_template(ChangeSetName=change_set_id)
-        new_template = yaml.dump(yaml.safe_load(json.dumps(
-            new_template_info['TemplateBody'], sort_keys=True, default=str)), default_flow_style=False)
+        new_template_info = cfn.get_template(
+            ChangeSetName=change_set_id,
+            TemplateStage='Processed',
+        )
+        new_template = get_canonical_template(new_template_info['TemplateBody'])
 
         status = stack['StackStatus']
         if status == 'REVIEW_IN_PROGRESS':
-            param_diff = {}
-            tem_diff = None
+            # when a stack is created for the first time
             cur_template = ''
         else:
-            cur_template_info = cfn.get_template(StackName=stack_name)
-            cur_template = yaml.dump(yaml.safe_load(json.dumps(
-                cur_template_info['TemplateBody'], sort_keys=True, default=str)), default_flow_style=False)
+            cur_template_info = cfn.get_template(
+                StackName=stack_name,
+                TemplateStage='Processed',
+            )
+            cur_template_summary = cfn.get_template_summary(
+                StackName=stack_name,
+            )
+            cur_template = get_canonical_template(cur_template_info['TemplateBody'])
 
         stacks.append({
             'StackName': stack_name,
-            'Parameters': collect_parameters(new_template_info['TemplateBody'], change_set, stack),
+            'Parameters': collect_parameters(cur_template_summary, change_set, stack),
             'TemplateDiff': calculate_template_diff(cur_template, new_template),
             'Changes': change_set['Changes'],
             'OldTemplate': cur_template
@@ -190,3 +197,24 @@ def calculate_diff(change_set_ids, job):
         },
         'Stacks': stacks,
     }
+
+# if the template deployed by the user is a yaml template and does not use
+# any transforms then it will be returned as string instead of dict. In
+# that case we don't try to parse and make it canonical as we cannot resolve
+# YAML tags. We also retain comments in the template that way.
+
+def get_canonical_template(body):
+    if isinstance(body, str):
+        return body
+    else:
+        return yaml.dump(
+            yaml.safe_load(
+                json.dumps(
+                    body,
+                    sort_keys=True,
+                    default=str,
+                )
+            ),
+            default_flow_style=False,
+        )
+
