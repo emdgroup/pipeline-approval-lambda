@@ -184,6 +184,7 @@ def calculate_diff(change_set_ids, job):
 
     credentials = aws_session(job['id'])
     return {
+        'Version': '1', # schema version
         'Pipeline': {
             'Region': AWS_REGION,
             'JobId': job['id'],
