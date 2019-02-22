@@ -133,12 +133,12 @@ def collect_parameters(template, change_set, stack):
     new = dict((x['ParameterKey'], x['ParameterValue'])
                for x in change_set.get('Parameters') or [])
     params = []
-    for name in tpl_params:
+    for name in new:
         param = {
             'Name': name,
-            'Default': tpl_params[name],
+            'Default': tpl_params.get(name),
             'CurrentValue': old.get(name),
-            'NewValue': new.get(name),
+            'NewValue': new[name],
         }
         params.append(param)
 
@@ -164,6 +164,7 @@ def calculate_diff(change_set_ids, job):
         if status == 'REVIEW_IN_PROGRESS':
             # when a stack is created for the first time
             cur_template = ''
+            cur_template_summary = {}
         else:
             cur_template_info = cfn.get_template(
                 StackName=stack_name,
