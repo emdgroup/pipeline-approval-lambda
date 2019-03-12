@@ -50,6 +50,9 @@ Resources:
               - cloudformation:DescribeStacks
               - cloudformation:GetTemplate
               - cloudformation:GetTemplateSummary
+              - cloudformation:DescribeStackDriftDetectionStatus
+              - cloudformation:DescribeStackResourceDrifts
+              - cloudformation:DetectStackDrift
             Resource: '*'
           - Effect: Allow
             Action:
