@@ -175,7 +175,7 @@ def get_drift_details(stackname):
         resource['ActualProperties'] = actual_props
         resource['ExpectedProperties'] = expected_props
         if resource['StackResourceDriftStatus'] != 'IN_SYNC':
-            diff = calculate_template_diff(actual_props, expected_props)
+            diff = calculate_template_diff(expected_props, actual_props)
             print(diff)
             resource['DriftDiff'] = diff
         else:
