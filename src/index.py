@@ -179,7 +179,7 @@ def get_drift_details(stackname):
             print(diff)
             resource['DriftDiff'] = diff
         else:
-            resource['DriftDiff'] = None
+            resource['DriftDiff'] = ''
 
     return resources
 
@@ -219,7 +219,7 @@ def calculate_diff(change_set_ids, job):
             )
             cur_template = get_canonical_template(cur_template_info['TemplateBody'])
             drift_status = get_drift_status(stack_name)
-            drift_details = get_drift_details(stack_name) if drift_status == 'DRIFTED' else []
+            drift_details = get_drift_details(stack_name)
 
         stacks.append({
             'StackName': stack_name,
