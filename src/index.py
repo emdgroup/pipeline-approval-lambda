@@ -155,7 +155,6 @@ def get_drift_status(stackname):
             StackDriftDetectionId=drift_id
         )
         status = response['DetectionStatus']
-        print(status)
         if status == 'DETECTION_COMPLETE':
             stack_drift_status = response['StackDriftStatus']
             return stack_drift_status
@@ -176,7 +175,6 @@ def get_drift_details(stackname):
         resource['ExpectedProperties'] = expected_props
         if resource['StackResourceDriftStatus'] != 'IN_SYNC':
             diff = calculate_template_diff(expected_props, actual_props)
-            print(diff)
             resource['DriftDiff'] = diff
         else:
             resource['DriftDiff'] = ''
