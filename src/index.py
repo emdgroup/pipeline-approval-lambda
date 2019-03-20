@@ -4,7 +4,8 @@ import os
 import json
 import yaml
 import difflib
-import json
+import time
+import datetime
 from urllib.parse import urlparse
 
 ROLE_ARN = os.environ['ROLE_ARN']
@@ -95,7 +96,7 @@ def put_changes(all_changes, job):
     job_id = job['id']
     s3client.put_object(Bucket=BUCKET,
                         Key=f'approvals/{job_id}.json',
-                        Body=json.dumps(all_changes),
+                        Body=json.dumps(all_changes, default=default),
                         ContentType='application/json',
                         )
     url = s3client.generate_presigned_url(
@@ -144,6 +145,45 @@ def collect_parameters(template, change_set, stack):
 
     return params
 
+def get_drift_status(stackname):
+    drift_id = cfn.detect_stack_drift(
+        StackName = stackname
+    )['StackDriftDetectionId']
+    status = None
+    while status is None or status == 'DETECTION_IN_PROGRESS':
+        response = cfn.describe_stack_drift_detection_status(
+            StackDriftDetectionId=drift_id
+        )
+        status = response['DetectionStatus']
+        if status == 'DETECTION_COMPLETE':
+            stack_drift_status = response['StackDriftStatus']
+            return stack_drift_status
+        elif status == 'DETECTION_IN_PROGRESS':
+            time.sleep(2)
+        else:
+            return status
+
+def get_drift_details(stackname):
+    response = cfn.describe_stack_resource_drifts(
+        StackName=stackname
+    )
+    resources = response['StackResourceDrifts']
+    for resource in resources:
+        actual_props = yaml.dump(yaml.safe_load(resource['ActualProperties']), default_flow_style=False)
+        expected_props = yaml.dump(yaml.safe_load(resource['ExpectedProperties']), default_flow_style=False)
+        resource['ActualProperties'] = actual_props
+        resource['ExpectedProperties'] = expected_props
+        if resource['StackResourceDriftStatus'] != 'IN_SYNC':
+            diff = calculate_template_diff(expected_props, actual_props)
+            resource['DriftDiff'] = diff
+        else:
+            resource['DriftDiff'] = ''
+
+    return resources
+
+def default(o):
+    if isinstance(o, (datetime.date, datetime.datetime)):
+        return o.isoformat()
 
 def calculate_diff(change_set_ids, job):
     stacks = []
@@ -165,6 +205,8 @@ def calculate_diff(change_set_ids, job):
             # when a stack is created for the first time
             cur_template = ''
             cur_template_summary = {}
+            drift_status = None
+            drift_details = []
         else:
             cur_template_info = cfn.get_template(
                 StackName=stack_name,
@@ -174,13 +216,17 @@ def calculate_diff(change_set_ids, job):
                 StackName=stack_name,
             )
             cur_template = get_canonical_template(cur_template_info['TemplateBody'])
+            drift_status = get_drift_status(stack_name)
+            drift_details = get_drift_details(stack_name)
 
         stacks.append({
             'StackName': stack_name,
             'Parameters': collect_parameters(cur_template_summary, change_set, stack),
             'TemplateDiff': calculate_template_diff(cur_template, new_template),
             'Changes': change_set['Changes'],
-            'OldTemplate': cur_template
+            'OldTemplate': cur_template,
+            'DriftStatus': drift_status,
+            'DriftDetails': drift_details
         })
 
     credentials = aws_session(job['id'])
@@ -219,4 +265,3 @@ def get_canonical_template(body):
             ),
             default_flow_style=False,
         )
-
