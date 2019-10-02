@@ -8,7 +8,7 @@ python:
   - 3.6
 
 install:
-  - pip install -r requirements.txt -t src/
-  - pip install boto3
+  - pip install --quiet -r requirements.txt -t src/
+  - pip install --quiet boto3
 
 script: python deploy.py
