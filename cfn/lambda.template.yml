@@ -79,7 +79,7 @@ Resources:
           WEB_URL: https://emdgroup.github.io/pipeline-approval/
           BUCKET: !Ref Approvals
           BUCKET_URL: !GetAtt Approvals.RegionalDomainName
-      Runtime: python3.6
+      Runtime: python3.7
       MemorySize: 512
       Timeout: 150
 
