@@ -169,10 +169,12 @@ def get_drift_details(stackname):
     )
     resources = response['StackResourceDrifts']
     for resource in resources:
-        actual_props = yaml.dump(yaml.safe_load(resource['ActualProperties']), default_flow_style=False)
-        expected_props = yaml.dump(yaml.safe_load(resource['ExpectedProperties']), default_flow_style=False)
-        resource['ActualProperties'] = actual_props
-        resource['ExpectedProperties'] = expected_props
+        if resource.get('ActualProperties'):
+            actual_props = yaml.dump(yaml.safe_load(resource['ActualProperties']), default_flow_style=False)
+            resource['ActualProperties'] = actual_props
+        if resource.get('ExpectedProperties'):
+            expected_props = yaml.dump(yaml.safe_load(resource['ExpectedProperties']), default_flow_style=False)
+            resource['ExpectedProperties'] = expected_props
         if resource['StackResourceDriftStatus'] != 'IN_SYNC':
             diff = calculate_template_diff(expected_props, actual_props)
             resource['DriftDiff'] = diff
