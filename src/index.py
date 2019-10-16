@@ -14,10 +14,9 @@ WEB_URL = os.environ['WEB_URL']
 BUCKET = os.environ['BUCKET']
 BUCKET_URL = os.environ['BUCKET_URL']
 
-cfn = boto3.client('cloudformation')
 s3client = boto3.client('s3', config=Config(signature_version='s3v4', s3={'addressing_style': 'path'}))
-pipeline=boto3.client('codepipeline')
-sns=boto3.client('sns')
+pipeline = boto3.client('codepipeline')
+sns = boto3.client('sns')
 
 
 
@@ -37,7 +36,10 @@ def lambda_handler(event, context):
                 'message': 'UserParameters is not valid JSON',
             }
         )
-    change_sets = get_changesets(params['Stacks'])
+    region = params.get('Region') or AWS_REGION
+    cfn = boto3.client('cloudformation', region_name=region)
+
+    change_sets = get_changesets(cfn, params['Stacks'])
     if len(change_sets) == 0:
         return pipeline.put_job_success_result(jobId=job_id)
 
@@ -45,7 +47,7 @@ def lambda_handler(event, context):
         job_details = pipeline.get_job_details(jobId=job_id)['jobDetails']
         job['pipelineName'] = job_details['data']['pipelineContext']['pipelineName']
 
-        all_changes = calculate_diff(change_sets, job)
+        all_changes = calculate_diff(cfn, change_sets, job)
         signed_url = put_changes(all_changes, job)
         send_notification(all_changes, params['TopicArn'], signed_url)
     except Exception as e:
@@ -75,7 +77,7 @@ def aws_session(job_id):
     return response['Credentials']
 
 
-def get_changesets(stacks):
+def get_changesets(cfn, stacks):
     change_sets = []
     for stack in stacks:
         cfnchange = list(filter(
@@ -145,7 +147,7 @@ def collect_parameters(template, change_set, stack):
 
     return params
 
-def get_drift_status(stackname):
+def get_drift_status(cfn, stackname):
     drift_id = cfn.detect_stack_drift(
         StackName = stackname
     )['StackDriftDetectionId']
@@ -163,7 +165,7 @@ def get_drift_status(stackname):
         else:
             return status
 
-def get_drift_details(stackname):
+def get_drift_details(cfn, stackname):
     response = cfn.describe_stack_resource_drifts(
         StackName=stackname
     )
@@ -187,7 +189,7 @@ def default(o):
     if isinstance(o, (datetime.date, datetime.datetime)):
         return o.isoformat()
 
-def calculate_diff(change_set_ids, job):
+def calculate_diff(cfn, change_set_ids, job):
     stacks = []
     for change_set_id in change_set_ids:
         change_set = cfn.describe_change_set(
@@ -218,8 +220,8 @@ def calculate_diff(change_set_ids, job):
                 StackName=stack_name,
             )
             cur_template = get_canonical_template(cur_template_info['TemplateBody'])
-            drift_status = get_drift_status(stack_name)
-            drift_details = get_drift_details(stack_name)
+            drift_status = get_drift_status(cfn, stack_name)
+            drift_details = get_drift_details(cfn, stack_name)
 
         stacks.append({
             'StackName': stack_name,
