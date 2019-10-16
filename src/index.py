@@ -36,14 +36,15 @@ def lambda_handler(event, context):
                 'message': 'UserParameters is not valid JSON',
             }
         )
-    region = params.get('Region') or AWS_REGION
-    cfn = boto3.client('cloudformation', region_name=region)
-
-    change_sets = get_changesets(cfn, params['Stacks'])
-    if len(change_sets) == 0:
-        return pipeline.put_job_success_result(jobId=job_id)
 
     try:
+        region = params.get('Region') or AWS_REGION
+        cfn = boto3.client('cloudformation', region_name=region)
+
+        change_sets = get_changesets(cfn, params['Stacks'])
+        if len(change_sets) == 0:
+            return pipeline.put_job_success_result(jobId=job_id)
+
         job_details = pipeline.get_job_details(jobId=job_id)['jobDetails']
         job['pipelineName'] = job_details['data']['pipelineContext']['pipelineName']
 
